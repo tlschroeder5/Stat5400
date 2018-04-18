@@ -1,0 +1,572 @@
+\documentclass{beamer}
+
+%Necessary packages
+\usepackage{amscd,amssymb,amsfonts,amsmath, Sweave}
+\usepackage{latexsym,euscript,enumerate,amsxtra}
+\usepackage{mathrsfs}
+\usepackage{amsthm}
+\usepackage[all,poly,knot]{xy}
+\usepackage{graphicx}
+\usepackage{pgfpages}
+\usepackage{color}
+\usepackage{cancel}
+
+%Alternative colors
+\definecolor{accent1}{HTML}{030000} %Black
+\definecolor{accent2}{HTML}{FFE600} %Gold
+\definecolor{accent3}{HTML}{F2F2F2} %Silver
+ 
+%Redefine colors in palette if so desired
+\usetheme{CambridgeUS}
+\setbeamercolor*{palette secondary}{use=structure, bg=accent1}
+\setbeamercolor*{palette primary}{use=structure, bg=accent3}
+\setbeamercolor*{palette tertiary}{use=structure, bg=accent2}
+%Useful commands 
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\Q}{\mathbb{Q}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\C}{\mathbb{C}}
+\newcommand{\F}{\mathbb{F}}
+\newcommand{\proj}{pr}
+\newtheorem{rcode}{R Code}
+
+%Begin presentation
+\title[FALL 2017]{STAT:5400 Project}
+\author[Jesse and Tyler; STAT5400]{Jesse Hamer and Tyler Schroeder \\ Professor Kate Cowles}
+\date{December 4, 2017}
+\institute[]{University of Iowa}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+\frame{\titlepage}
+
+\begin{frame}<beamer>
+\frametitle{Outline}	
+\tableofcontents
+\end{frame}
+
+\section{Introduction}
+
+\begin{frame}
+\frametitle{Project Outline}
+\setlength\parindent{24pt} The goal was to use statistics to give insight into basic structural properties of Tic-Tac-Toe. To do this, we created a Game Decision Tree: a data tree where each node of the tree reprsents a possible board state of Tic-Tac-Toe. We then developed an algorithm to traverse through the tree to simulate games of Tic-Tac-Toe and analyzed the resulting data from a large number of game simulations to make Game-Theoretic conclusions.    
+\end{frame}
+
+\begin{frame}
+	\frametitle{Game Tree}
+	\begin{definition}
+In game theory, a \textbf{game tree} is a directed graph whose nodes are positions in a game and whose edges are moves. The complete game tree for a game is the game tree starting at the initial position and containing all possible moves from each position.
+	\end{definition}
+  In our Tic-Tac-Toe game tree each node will represent a possible board state.
+	\end{frame}
+
+\begin{frame}
+\frametitle{\small{http://www.ques10.com/p/12787/draw-game-tree-for-a-tic-tac-toe-problem-1/}}
+   	\begin{center}
+		\includegraphics[scale=.38]{gametree.png}
+	\end{center}
+\end{frame}
+
+\begin{frame}
+\frametitle{Simulating Games}
+\setlength\parindent{24pt} Each node of the tree is then decorated with a weight that corresponds to the number of descendants resulting in a win state for player ``A" and player ``B". To then simulate games of Tic-Tac-Toe, we created an algorithm to ``randomly" traverse through the tree to simulate games of Tic-Tac-Toe (this was done by assigning our players a level of expertise within the algorithm). By simulating a large enough pool of games we then had data to analyze.   
+\end{frame}
+
+\begin{frame}
+\frametitle{Initial Research Questions}
+\begin{itemize}
+\setlength\itemsep{1em}
+\item Is there an advantage to going first? 
+\item If so, at what level of expertise does the second player need to reach to overcome this advantage?
+\item If the first-player advantage is mitigated, what is the raw effect of expertise on chances of winnng?
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Implementation}	
+	The entire project was completed in R:
+		\begin{itemize}
+		\setlength\itemsep{1em}
+			\item ``data.tree" package to build the game tree 
+			\item Simulation studies generated using algorithms written in R 
+			\item The ``glm()" and ``lm()" functions for regression models 
+			\item Presentation built using Beamer package within \LaTeX\ executed with Sweave
+		\end{itemize}
+\end{frame}
+
+\section{Data Tree}
+
+\begin{frame}[fragile]
+\begin{rcode}
+\frametitle{The Build Tree Algorithm}
+\tiny{
+<<eval=FALSE>>=
+BuildTree <- function(node){
+ if(is.null(node$GameState)){
+   if((node$level%%2==0 && node$level < n^2 + 1)){
+    for(i in which(node$Board=="-")){
+     child <- node$AddChild(i)
+     nextMove <- node$Board
+     nextMove[i] <- "O"
+     child$Board <- nextMove
+     child$GameState <- CheckOWin(child$Board,child$level)
+     upDateTree(child)
+     BuildTree(child)
+    }
+   } else if(node$level < n^2+1){
+    for(i in which(node$Board=="-")){
+     child <- node$AddChild(i)
+     nextMove <- node$Board
+     nextMove[i] <- "X"
+     child$Board <- nextMove
+     child$GameState <- CheckXWin(child$Board,child$level)
+     upDateTree(child)
+     BuildTree(child)
+    }
+     }
+ } 
+}  
+@
+}
+\end{rcode}
+\end{frame}
+
+\section{Simulating Game-Play}
+
+\begin{frame}
+\frametitle{The Game-Playing Algorithm}
+\setlength\parindent{24pt} Each player is assigned an ``expertise" level, which is a numeric value between 0 and 1. This number represents the percentage of ``worst" moves which the player will ignore when selecting their next move. The game-playing algorithm is a simple tree-traversal where moves are selected according to this expertise criterion.
+\end{frame}
+
+\begin{frame}[fragile]
+\begin{rcode}
+\tiny{
+<<eval=FALSE>>=
+playGame = function(startNode, ea,eb, output = FALSE){
+  #######VARIABLE DECLARATIONS#####
+  #let's play
+  while((game.on) & (turn < n^2 +1)){
+    
+    look.ahead = current$children
+    
+    if(whosMove == "X"){
+      
+      if(whichPlayer == "A"){
+        #check to see if "A" can win the game
+        winning.moves = sapply(current$children,getGameState)
+        if("X"%in% winning.moves){
+          final.move = Climb(current, sample(names(which(winning.moves == "X")),1))
+          game.on = FALSE
+          winner = "A"
+        } else if("T"%in% winning.moves){
+          #see if we can force a tie
+          final.move = Climb(current, sample(names(which(winning.moves == "T")),1))
+          game.on = FALSE
+          winner = "TIE"
+        }else {
+          weights = sapply(look.ahead,weightFinderX)
+          possible.moves = weights[weights>=quantile(weights,c(ea))]
+          if(length(possible.moves)>1){
+            next.move = Climb(current, sample(names(which(weights == sample(possible.moves,1))),1))
+          } else{next.move = Climb(current, names(possible.moves))}
+          if(output){cat("MOVE ", turn, "\n")
+          print(next.move$Board)}
+        }
+      } else if(whichPlayer == "B"){
+        #check to see if "A" can win the game
+        winning.moves = sapply(current$children,getGameState)
+        if("X"%in% winning.moves){
+          final.move = Climb(current, sample(names(which(winning.moves == "X")),1))
+          game.on = FALSE
+          winner = "B"
+        } else if("T"%in% winning.moves){
+          #see if we can force a tie
+          final.move = Climb(current, sample(names(which(winning.moves == "T")),1))
+          game.on = FALSE
+          winner = "TIE"
+        }else {
+          weights = sapply(look.ahead,weightFinderX)
+          possible.moves = weights[weights>=quantile(weights,c(eb))]
+          if(length(possible.moves)>1){
+            next.move = Climb(current, sample(names(which(weights == sample(possible.moves,1))),1))
+          } else{next.move = Climb(current, names(possible.moves))}
+          if(output){cat("MOVE ", turn,"\n")
+          print(next.move$Board)}
+        }
+      } else {
+        print("ERROR: Not a valid player!")
+        return(NULL)
+      }
+    } else if(whosMove == "O"){
+      
+      if(whichPlayer == "A"){
+        #check to see if "A" can win the game
+        winning.moves = sapply(current$children,getGameState)
+        if("O"%in% winning.moves){
+          final.move = Climb(current, sample(names(which(winning.moves == "O")),1))
+          game.on = FALSE
+          winner = "A"
+        } else if("T"%in% winning.moves){
+          #see if we can force a tie
+          final.move = Climb(current, sample(names(which(winning.moves == "T")),1))
+          game.on = FALSE
+          winner = "TIE"
+        }else {
+          weights = sapply(look.ahead,weightFinderO)
+          possible.moves = weights[weights>=quantile(weights,c(ea))]
+          if(length(possible.moves)>1){
+            next.move = Climb(current, sample(names(which(weights == sample(possible.moves,1))),1))
+          } else{next.move = Climb(current, names(possible.moves))}
+          if(output){cat("MOVE ", turn, "\n")
+          print(next.move$Board)}
+        }
+      } else if(whichPlayer == "B"){
+        #check to see if "A" can win the game
+        winning.moves = sapply(current$children,getGameState)
+        if("O"%in% winning.moves){
+          final.move = Climb(current, sample(names(which(winning.moves == "O")),1))
+          game.on = FALSE
+          winner = "B"
+        } else if("T"%in% winning.moves){
+          #see if we can force a tie
+          final.move = Climb(current, sample(names(which(winning.moves == "T")),1))
+          game.on = FALSE
+          winner = "TIE"
+        }else {
+          weights = sapply(look.ahead,weightFinderO)
+          possible.moves = weights[weights>=quantile(weights,c(eb))]
+          if(length(possible.moves)>1){
+            next.move = Climb(current, sample(names(which(weights == sample(possible.moves,1))),1))
+          } else{next.move = Climb(current, names(possible.moves))}
+          if(output){cat("MOVE ", turn, "\n")
+          print(next.move$Board)}
+        }
+      } else {
+        print("ERROR: Not a valid player!")
+        return(NULL)
+      }
+    }
+    current = next.move
+    turn = turn +1
+    if(whichPlayer == "A"){whichPlayer = "B"} else {whichPlayer = "A"}
+    if(whosMove == "X"){whosMove = "O"} else{whosMove = "X"}
+  }
+  if(output){cat("FINAL MOVE: ","\n")
+  print(final.move$Board)
+  if(winner !="TIE"){
+    cat("The winner is: ", winner, "!","\n")
+  } else{print("The game is a tie!")}}
+  
+  return(list("winner" = winner, "Final.Board" = final.move$Board, "turns" = turn-1))
+}
+@ 
+}
+\end{rcode}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Match-Playing Algorithm}
+\begin{itemize}
+\item Plays a series of games in a ``race-to" fashion.
+\item Players ``flip coin" to determine who goes first
+\item User can define match-style:
+\begin{itemize}
+\item \emph{alternate}: players alternate going first
+\item \emph{winner}: winner goes first
+\item \emph{loser}: loser goes first
+\end{itemize}
+\end{itemize}
+\end{frame}
+
+\section{Statistical Analysis}
+
+\begin{frame}[fragile]
+\frametitle{Generating Input Values}
+\setlength\parindent{24pt} The code below generates a matrix of pairs of expertise values $(ea, eb)$. User inputs
+granularity $g$ (a positive integer) which determines how finely to subdivide
+the interval $[0,1]$. The matrix then generates all pairs obtained by walking through 
+$[0,1]$ in $g$ steps.
+\begin{rcode}
+\tiny{
+<<eval=FALSE>>=
+generateExpertise = function(g){
+  if(g <= 0){
+    print("Error: granularity must be an integer larger than 0.")
+    return(NULL)
+  }
+  v = (1/g)*0:g
+  expertises = matrix(rep(NA, 2*(g+1)^2), (g+1)^2,2)
+  for (i in v){
+    expertises[(i*g^2+i*g+1):((i+1/g)*g^2+(i+1/g)*g),1] = rep(i,g+1)
+    expertises[(i*g^2+i*g+1):((i+1/g)*g^2+(i+1/g)*g),2] = v
+  }
+  return(expertises)
+}
+@
+}
+\end{rcode}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Generating Input Values (cont.)}
+\setlength\parindent{24pt} Then an input matrix is generated from our expertise matrix and we run 1000 simulations for each pair of expertise values. Each column of results represents a 1000-game simulation at a fixed pair of expertise values. The win/tie rates from the results are computed and everything is stored in a data.frame. 
+\begin{rcode}
+\tiny{
+<<eval=FALSE>>=
+expertises = generateExpertise(10)
+games.input = matrix(c(rep(1000,length(M[,1])), M[,1],M[,2]),length(M[,1]),3)
+results = apply(games.input, 1, playGamesGivenExpertise)
+results.df = data.frame(wrA = apply(results,2,winRateA), 
+wrB = apply(results,2,winRateB),tieRate =  apply(results,2,winRateTie)
+,ea = games.input[,2], eb = games.input[,3])
+@
+}
+\end{rcode}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Results}
+\begin{table}[ht]
+\centering
+\begin{tabular}{rrrrrr}
+  \hline
+ & wrA & wrB & tieRate & ea & eb \\ 
+  \hline
+1 & 0.67 & 0.29 & 0.04 & 0.00 & 0.00 \\ 
+  2 & 0.63 & 0.31 & 0.06 & 0.00 & 0.10 \\ 
+  3 & 0.57 & 0.36 & 0.07 & 0.00 & 0.20 \\ 
+  4 & 0.55 & 0.43 & 0.02 & 0.00 & 0.30 \\ 
+  5 & 0.54 & 0.42 & 0.04 & 0.00 & 0.40 \\ 
+  6 & 0.46 & 0.50 & 0.04 & 0.00 & 0.50 \\ 
+  7 & 0.46 & 0.51 & 0.03 & 0.00 & 0.60 \\ 
+  8 & 0.43 & 0.56 & 0.01 & 0.00 & 0.70 \\ 
+  9 & 0.43 & 0.57 & 0.00 & 0.00 & 0.80 \\ 
+  10 & 0.16 & 0.82 & 0.02 & 0.00 & 0.90 \\ 
+  11 & 0.17 & 0.82 & 0.02 & 0.00 & 1.00 \\ 
+  12 & 0.71 & 0.24 & 0.06 & 0.10 & 0.00 \\ 
+  13 & 0.66 & 0.28 & 0.06 & 0.10 & 0.10 \\ 
+  14 & 0.65 & 0.29 & 0.06 & 0.10 & 0.20 \\ 
+  15 & 0.60 & 0.35 & 0.05 & 0.10 & 0.30 \\ 
+  16 & 0.60 & 0.35 & 0.05 & 0.10 & 0.40 \\ 
+  17 & 0.50 & 0.44 & 0.06 & 0.10 & 0.50 \\ 
+  18 & 0.53 & 0.42 & 0.05 & 0.10 & 0.60 \\ 
+  19 & 0.51 & 0.48 & 0.01 & 0.10 & 0.70 \\ 
+  20 & 0.52 & 0.47 & 0.01 & 0.10 & 0.80 \\ 
+  21 & 0.20 & 0.75 & 0.05 & 0.10 & 0.90 \\ 
+  22 & 0.21 & 0.76 & 0.04 & 0.10 & 1.00 \\ 
+   \hline
+\end{tabular}
+\end{table}
+\end{frame}
+
+\begin{frame}
+\frametitle{Player ``B" has greatest Win Rate}
+This occurs only in $17\%$ of cases. Player ``B" only overcomes the first-player advantage when the difference in expertise is large.
+\tiny{
+\begin{table}[ht]
+\centering
+\begin{tabular}{rrrrrr}
+  \hline
+ & wrA & wrB & tieRate & ea & eb \\ 
+  \hline
+6 & 0.46 & 0.50 & 0.04 & 0.00 & 0.50 \\ 
+  7 & 0.46 & 0.51 & 0.03 & 0.00 & 0.60 \\ 
+  8 & 0.43 & 0.56 & 0.01 & 0.00 & 0.70 \\ 
+  9 & 0.43 & 0.57 & 0.00 & 0.00 & 0.80 \\ 
+  10 & 0.16 & 0.82 & 0.02 & 0.00 & 0.90 \\ 
+  11 & 0.17 & 0.82 & 0.02 & 0.00 & 1.00 \\ 
+  21 & 0.20 & 0.75 & 0.05 & 0.10 & 0.90 \\ 
+  22 & 0.21 & 0.76 & 0.04 & 0.10 & 1.00 \\ 
+  30 & 0.49 & 0.50 & 0.01 & 0.20 & 0.70 \\ 
+  32 & 0.18 & 0.78 & 0.04 & 0.20 & 0.90 \\ 
+  33 & 0.20 & 0.76 & 0.04 & 0.20 & 1.00 \\ 
+  43 & 0.22 & 0.74 & 0.05 & 0.30 & 0.90 \\ 
+  44 & 0.23 & 0.71 & 0.06 & 0.30 & 1.00 \\ 
+  54 & 0.24 & 0.68 & 0.07 & 0.40 & 0.90 \\ 
+  55 & 0.23 & 0.70 & 0.07 & 0.40 & 1.00 \\ 
+  65 & 0.25 & 0.69 & 0.06 & 0.50 & 0.90 \\ 
+  66 & 0.25 & 0.69 & 0.07 & 0.50 & 1.00 \\ 
+  76 & 0.35 & 0.52 & 0.12 & 0.60 & 0.90 \\ 
+  77 & 0.33 & 0.52 & 0.14 & 0.60 & 1.00 \\ 
+  87 & 0.20 & 0.55 & 0.25 & 0.70 & 0.90 \\ 
+  88 & 0.22 & 0.50 & 0.28 & 0.70 & 1.00 \\ 
+   \hline
+\end{tabular}
+\end{table}
+}
+\end{frame}
+
+\begin{frame}
+\frametitle{Observations}
+Notice that regardless of the increasing expertise of player ``B", player ``A" is never defeated:
+\begin{table}[ht]
+\centering
+\begin{tabular}{rrrrrr}
+  \hline
+ & wrA & wrB & tieRate & ea & eb \\ 
+  \hline
+100 & 0.98 & 0.00 & 0.02 & 0.90 & 0.00 \\ 
+101 & 0.97 & 0.00 & 0.03 & 0.90 & 0.10 \\ 
+102 & 0.97 & 0.00 & 0.03 & 0.90 & 0.20 \\ 
+103 & 0.97 & 0.00 & 0.03 & 0.90 & 0.30 \\ 
+104 & 0.96 & 0.00 & 0.04 & 0.90 & 0.40 \\ 
+105 & 0.88 & 0.00 & 0.12 & 0.90 & 0.50 \\ 
+106 & 0.88 & 0.00 & 0.12 & 0.90 & 0.60 \\ 
+107 & 1.00 & 0.00 & 0.00 & 0.90 & 0.70 \\ 
+108 & 1.00 & 0.00 & 0.00 & 0.90 & 0.80 \\ 
+109 & 1.00 & 0.00 & 0.00 & 0.90 & 0.90 \\ 
+110 & 1.00 & 0.00 & 0.00 & 0.90 & 1.00 \\ 
+111 & 0.98 & 0.00 & 0.01 & 1.00 & 0.00 \\ 
+112 & 0.97 & 0.00 & 0.03 & 1.00 & 0.10 \\ 
+113 & 0.96 & 0.00 & 0.04 & 1.00 & 0.20 \\ 
+114 & 0.97 & 0.00 & 0.03 & 1.00 & 0.30 \\ 
+115 & 0.97 & 0.00 & 0.03 & 1.00 & 0.40 \\ 
+116 & 0.86 & 0.00 & 0.14 & 1.00 & 0.50 \\ 
+117 & 0.90 & 0.00 & 0.10 & 1.00 & 0.60 \\ 
+118 & 1.00 & 0.00 & 0.00 & 1.00 & 0.70 \\ 
+119 & 1.00 & 0.00 & 0.00 & 1.00 & 0.80 \\ 
+120 & 1.00 & 0.00 & 0.00 & 1.00 & 0.90 \\ 
+121 & 1.00 & 0.00 & 0.00 & 1.00 & 1.00 \\ 
+\hline
+\end{tabular}
+\end{table}
+\end{frame}
+
+\begin{frame}
+Observe when $e_b = .5$ it is achieving a ``Tie" state when $e_a = 1$, but as the expertise increases, player ``B" is no longer able to `Tie' player ``A": 
+\begin{table}[ht]
+\centering
+\begin{tabular}{rrrrrr}
+  \hline
+ & wrA & wrB & tieRate & ea & eb \\ 
+  \hline
+111 & 0.98 & 0.00 & 0.01 & 1.00 & 0.00 \\ 
+  112 & 0.97 & 0.00 & 0.03 & 1.00 & 0.10 \\ 
+  113 & 0.96 & 0.00 & 0.04 & 1.00 & 0.20 \\ 
+  114 & 0.97 & 0.00 & 0.03 & 1.00 & 0.30 \\ 
+  115 & 0.97 & 0.00 & 0.03 & 1.00 & 0.40 \\ 
+  116 & 0.86 & 0.00 & 0.14 & 1.00 & 0.50 \\ 
+  117 & 0.90 & 0.00 & 0.10 & 1.00 & 0.60 \\ 
+  118 & 1.00 & 0.00 & 0.00 & 1.00 & 0.70 \\ 
+  119 & 1.00 & 0.00 & 0.00 & 1.00 & 0.80 \\ 
+  120 & 1.00 & 0.00 & 0.00 & 1.00 & 0.90 \\ 
+  121 & 1.00 & 0.00 & 0.00 & 1.00 & 1.00 \\ 
+   \hline
+\end{tabular}
+\end{table}
+\end{frame}
+
+\begin{frame}[fragile]
+\begin{center}
+\setkeys{Gin}{width = 0.7\textwidth}
+<<fig=TRUE, echo=FALSE>>=
+load(file = "games_winrate.RData")
+plot(results.df)
+@
+\end{center}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Regression Models}
+\begin{rcode}
+\tiny{
+<<eval=FALSE>>=
+#logistic models
+matches.alt.logit.glm = glm(result~ea + eb, family = binomial(link = "logit"), data = matches.alt.logit.df)
+matches.winner.logit.glm = glm(result~ea + eb, family = binomial(link = "logit"), data = matches.winner.logit.df)
+matches.lose.logit.glm = glm(result~ea + eb, family = binomial(link = "logit"), data = matches.lose.logit.df)
+
+#game winrate models
+aWins.lm = lm(wrA~ea + eb, data = results.df)
+bWins.lm = lm(wrB ~ ea + eb, data = results.df)
+ties.lm = lm(tieRate ~ea + eb, data = results.df)
+
+#turns models
+matches.alt.turns.lm = lm(result ~ea + eb, data = matches.alt.turns.df)
+matches.winner.turns.lm = lm(result ~ea + eb, data = matches.winner.turns.df)
+matches.lose.turns.lm = lm(result ~ea + eb, data = matches.lose.turns.df)
+@
+}
+\end{rcode}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Linear Regression}
+\tiny{
+\setlength\parindent{24pt} If both players make decisions randomly, the win rate of Player ``A" is $64\%$. For $e_b$ held fixed every $.1$ increase in $e_a$ produces an expected $5\%$ increase to the winrate of Player ``A". Conversely, for $e_a$ held fixed, every .1 increase to $e_b$ produces an expected $4.4\%$ decrease to the winrate of Player ``A":
+\begin{verbatim}
+Call:
+lm(formula = wrA ~ ea + eb, data = results.df) 
+Residuals:
+     Min       1Q   Median       3Q      Max 
+-0.43310 -0.05338  0.00774  0.05310  0.34705 
+Coefficients:
+            Estimate Std. Error t value Pr(>|t|)    
+(Intercept)  0.64393    0.02854   22.57   <2e-16 ***
+ea           0.49431    0.03684   13.42   <2e-16 ***
+eb          -0.43586    0.03684  -11.83   <2e-16 ***
+---
+Signif. codes: 0 *** 0.001 ** 0.01 * 0.05 . 0.1   1
+Residual standard error: 0.1282 on 118 degrees of freedom
+Multiple R-squared:  0.7306,	Adjusted R-squared:  0.726 
+F-statistic:   160 on 2 and 118 DF,  p-value: < 2.2e-16
+\end{verbatim}
+}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Logistic Regression (Matches)}
+\tiny{
+If the expertise $e_b$ is held fixed and...
+\begin{itemize}
+\item $e_a$ is increased by .1, then the chances of Player ``B" winning decreases by $47\%$ 
+\item $e_a$ is increased by .2, then the chances of Player ``B" winning decreases by $72\%$ 
+\item $e_a$ is increased by .3, then the chances of Player ``B" winning decreases by $85\%$ 
+\end{itemize}
+<<echo=FALSE>>=
+load(file = "matches_alt_logit.RData")
+matches.alt.logit.df$result = factor(matches.alt.logit.df$result, levels = c("A","B"), labels = c("A","B"))
+matches.alt.logit.glm = glm(result~ea + eb, family = binomial(link = "logit"), data = matches.alt.logit.df)
+matches.alt.logit.summary = summary(matches.alt.logit.glm)
+matches.alt.logit.summary
+@
+}
+\end{frame}
+
+\begin{frame}[fragile]
+\tiny{
+<<echo=FALSE>>=
+load(file = "matches_alt_turns.RData")
+matches.alt.turns.lm = lm(result ~ea + eb, data = matches.alt.turns.df)
+matches.alt.turns.summary = summary(matches.alt.turns.lm)
+matches.alt.turns.summary
+@
+}
+\end{frame}
+
+\section{Conclusion}
+
+\begin{frame}
+\frametitle{Summary of Results}
+\begin{itemize}
+\setlength\itemsep{1em}
+\item There are 255,168 unique games of Tic-Tac-Toe possible. Of these, 131,184 are won by the first player, 77,904 are won by the second player, and 46,080 are drawn. 
+\item On average, Player ``B" must have an expertise .6 greater than that of Player ``A" to have a greater winrate. 
+\item The best possible first move for a player to take is the center of the board. 
+\item By allowing first-player to alternate in a match structure first-player advantage is essentially eliminated. 
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Further Questions}
+\begin{itemize}
+\setlength\itemsep{1em}
+\item Possible refinements to algorithm to more accurately simulate games of Tic-Tac-Toe?
+\item How are the results affected when the dimensions of the board are increased?
+\item Can this experiement be applied to other games? Or generalized to encompass a whole class of games?
+\end{itemize}
+\end{frame}
+
+\end{document}
